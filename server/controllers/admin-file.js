@@ -1,10 +1,12 @@
-'use strict';
+"use strict";
 
-const { merge } = require('lodash/fp');
-const { mapAsync } = require('@strapi/utils');
-const { getService } = require('../utils');
-const { ACTIONS, FILE_MODEL_UID } = require('../constants');
-const { findEntityAndCheckPermissions } = require('./utils/find-entity-and-check-permissions');
+const { merge } = require("lodash/fp");
+const { mapAsync } = require("@strapi/utils");
+const { getService } = require("../utils");
+const { ACTIONS, FILE_MODEL_UID } = require("../constants");
+const {
+  findEntityAndCheckPermissions,
+} = require("./utils/find-entity-and-check-permissions");
 
 module.exports = {
   async find(ctx) {
@@ -12,7 +14,32 @@ module.exports = {
       state: { userAbility },
     } = ctx;
 
-    const defaultQuery = { populate: { folder: true } };
+    const userIds = await strapi.db.connection
+      .raw(
+        `
+      SELECT DISTINCT
+        caul.user_id
+      FROM
+        companies_admin_users_links caul
+      JOIN (
+        SELECT
+          user_id, company_id
+        FROM
+          companies_admin_users_links
+        WHERE
+          user_id = ${ctx.state.user.id}
+      ) AS user_companies ON
+        caul.company_id = user_companies.company_id
+    `
+      )
+      .then((res) => res.rows.map((row) => row.user_id));
+
+    const defaultQuery = {
+      populate: {
+        folder: true,
+        createdBy: true,
+      },
+    };
 
     const pm = strapi.admin.services.permission.createPermissionsManager({
       ability: userAbility,
@@ -27,10 +54,20 @@ module.exports = {
     const pmQuery = pm.addPermissionsQueryTo(merge(defaultQuery, ctx.query));
     const query = await pm.sanitizeQuery(pmQuery);
 
-    const { results: files, pagination } = await getService('upload').findPage(query);
+    query.filters["$and"]?.push({
+      createdBy: {
+        id: {
+          $in: userIds,
+        },
+      },
+    });
+
+    const { results: files, pagination } = await getService("upload").findPage(
+      query
+    );
 
     // Sign file urls for private providers
-    const signedFiles = await mapAsync(files, getService('file').signFileUrls);
+    const signedFiles = await mapAsync(files, getService("file").signFileUrls);
 
     const sanitizedFiles = await pm.sanitizeOutput(signedFiles);
 
@@ -50,7 +87,7 @@ module.exports = {
       id
     );
 
-    const signedFile = await getService('file').signFileUrls(file);
+    const signedFile = await getService("file").signFileUrls(file);
     ctx.body = await pm.sanitizeOutput(signedFile);
   },
 
@@ -67,7 +104,7 @@ module.exports = {
 
     const [body] = await Promise.all([
       pm.sanitizeOutput(file, { action: ACTIONS.read }),
-      getService('upload').remove(file),
+      getService("upload").remove(file),
     ]);
 
     ctx.body = body;
