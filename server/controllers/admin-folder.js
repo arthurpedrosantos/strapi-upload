@@ -20,35 +20,7 @@ module.exports = {
         model: FOLDER_MODEL_UID,
       });
 
-    const userIds = await strapi.db.connection
-      .raw(
-        `
-      SELECT DISTINCT
-        caul.user_id
-      FROM
-        companies_admin_users_links caul
-      JOIN (
-        SELECT
-          user_id, company_id
-        FROM
-          companies_admin_users_links
-        WHERE
-          user_id = ${ctx.state.user.id}
-      ) AS user_companies ON
-        caul.company_id = user_companies.company_id
-    `
-      )
-      .then((res) => res.rows.map((row) => row.user_id));
-
     const query = await permissionsManager.sanitizeQuery(ctx.query);
-
-    query.filters["$and"]?.push({
-      createdBy: {
-        id: {
-          $in: userIds,
-        },
-      },
-    });
 
     const { results } = await strapi.entityService.findWithRelationCountsPage(
       FOLDER_MODEL_UID,
@@ -86,7 +58,36 @@ module.exports = {
         model: FOLDER_MODEL_UID,
       });
 
+    const userIds = await strapi.db.connection
+      .raw(
+        `
+      SELECT DISTINCT
+        caul.user_id
+      FROM
+        companies_admin_users_links caul
+      JOIN (
+        SELECT
+          user_id, company_id
+        FROM
+          companies_admin_users_links
+        WHERE
+          user_id = ${ctx.state.user.id}
+      ) AS user_companies ON
+        caul.company_id = user_companies.company_id
+    `
+      )
+      .then((res) => res.rows.map((row) => row.user_id));
+
     const query = await permissionsManager.sanitizeQuery(ctx.query);
+
+    query.filters["$and"]?.push({
+      createdBy: {
+        id: {
+          $in: userIds,
+        },
+      },
+    });
+
     const results = await strapi.entityService.findWithRelationCounts(
       FOLDER_MODEL_UID,
       {
